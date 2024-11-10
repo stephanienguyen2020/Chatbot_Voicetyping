@@ -20,6 +20,9 @@ import { useChatHandler } from "./chat-hooks/use-chat-handler"
 import { useChatHistoryHandler } from "./chat-hooks/use-chat-history"
 import { usePromptAndCommand } from "./chat-hooks/use-prompt-and-command"
 import { useSelectFileHandler } from "./chat-hooks/use-select-file-handler"
+import { useVoiceRecognition } from "./chat-hooks/use-voice-recognition"
+import { MicOff, Mic } from "lucide-react"
+import { Button } from "../ui/button"
 
 interface ChatInputProps {}
 
@@ -72,6 +75,9 @@ export const ChatInput: FC<ChatInputProps> = ({}) => {
     setNewMessageContentToNextUserMessage,
     setNewMessageContentToPreviousUserMessage
   } = useChatHistoryHandler()
+
+  const { isListening, toggleListening } =
+    useVoiceRecognition(handleInputChange)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -252,6 +258,22 @@ export const ChatInput: FC<ChatInputProps> = ({}) => {
           onCompositionStart={() => setIsTyping(true)}
           onCompositionEnd={() => setIsTyping(false)}
         />
+
+        <div className="absolute bottom-[14px] right-14 cursor-pointer hover:opacity-50">
+          <Button
+            type="button"
+            variant={isListening ? "destructive" : "secondary"}
+            onClick={toggleListening}
+            className="size-8 p-0"
+            aria-label={isListening ? "Stop listening" : "Start listening"}
+          >
+            {isListening ? (
+              <MicOff className="size-4" />
+            ) : (
+              <Mic className="size-4" />
+            )}
+          </Button>
+        </div>
 
         <div className="absolute bottom-[14px] right-3 cursor-pointer hover:opacity-50">
           {isGenerating ? (

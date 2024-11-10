@@ -9,6 +9,7 @@ import {
   buildFinalMessages,
   adaptMessagesForGoogleGemini
 } from "@/lib/build-prompt"
+import { RealtimeChatHandler } from "@/lib/chat/realtime-chat"
 import { consumeReadableStream } from "@/lib/consume-stream"
 import { Tables, TablesInsert } from "@/supabase/types"
 import {
@@ -201,6 +202,60 @@ export const handleHostedChat = async (
   setChatMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
   setToolInUse: React.Dispatch<React.SetStateAction<string>>
 ) => {
+  // Check if using real-time model
+  if (modelData.modelId === "gpt-4o-realtime-preview-2024-10-01") {
+    try {
+      // Get configuration and API key from server
+      const response = await fetch("/api/chat/realtime", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          chatSettings: payload.chatSettings,
+          messages: payload.chatMessages
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to initialize real-time chat")
+      }
+
+      const config = await response.json()
+
+      // Initialize real-time handler
+      const realtimeHandler = new RealtimeChatHandler(
+        config.apiKey,
+        (token: string) => {
+          setChatMessages(prev => {
+            const newMessages = [...prev]
+            const lastMessage = newMessages[newMessages.length - 1]
+            if (lastMessage.role === "assistant") {
+              lastMessage.content += token
+            }
+            return newMessages
+          })
+          setFirstTokenReceived(true)
+        }
+      )
+
+      // Connect and send initial message
+      realtimeHandler.connect()
+      realtimeHandler.sendMessage(config.messages, config.instructions)
+
+      // Cleanup on abort
+      newAbortController.signal.addEventListener("abort", () => {
+        realtimeHandler.disconnect()
+      })
+
+      return
+    } catch (error) {
+      console.error("Real-time chat error:", error)
+      throw error
+    }
+  }
+
+  // Existing code for non-real-time models
   const provider =
     modelData.provider === "openai" && profile.use_azure_openai
       ? "azure"
@@ -208,20 +263,59 @@ export const handleHostedChat = async (
 
   let draftMessages = await buildFinalMessages(payload, profile, chatImages)
 
-  let formattedMessages : any[] = []
-  if (provider === "google") {
-    formattedMessages = await adaptMessagesForGoogleGemini(payload, draftMessages)
-  } else {
-    formattedMessages = draftMessages
-  }
-
-  const apiEndpoint =
-    provider === "custom" ? "/api/chat/custom" : `/api/chat/${provider}`
+  const apiEndpoint = `/api/chat/${provider}`
 
   const requestBody = {
     chatSettings: payload.chatSettings,
-    messages: formattedMessages,
+    messages: draftMessages,
     customModelId: provider === "custom" ? modelData.hostedId : ""
+  }
+
+  if (modelData.modelId === "gpt-4o-realtime-preview-2024-10-01") {
+    let fullResponse = ""
+
+    const realtimeHandler = new RealtimeChatHandler(
+      profile.openai_api_key!,
+      // Handle incoming tokens
+      token => {
+        fullResponse += token
+        setChatMessages(prev => {
+          const newMessages = [...prev]
+          const lastMessage = newMessages[newMessages.length - 1]
+          if (lastMessage.role === "assistant") {
+            lastMessage.content = fullResponse
+          }
+          return newMessages
+        })
+        setFirstTokenReceived(true)
+      },
+      // Handle errors
+      error => {
+        console.error("Realtime chat error:", error)
+        setIsGenerating(false)
+        // Add your error handling UI logic here
+      },
+      // Handle completion
+      () => {
+        setIsGenerating(false)
+      }
+    )
+
+    try {
+      await realtimeHandler.connect(draftMessages, payload.chatSettings)
+
+      // Setup abort controller
+      newAbortController.signal.addEventListener("abort", () => {
+        realtimeHandler.disconnect()
+        setIsGenerating(false)
+      })
+    } catch (error) {
+      console.error("Failed to establish realtime connection:", error)
+      setIsGenerating(false)
+      throw error
+    }
+
+    return
   }
 
   const response = await fetchChatResponse(

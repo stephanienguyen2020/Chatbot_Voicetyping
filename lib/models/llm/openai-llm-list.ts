@@ -81,7 +81,23 @@ const GPT3_5Turbo: LLM = {
   }
 }
 
+const GPT4Realtime: LLM = {
+  modelId: "gpt-4o",
+  modelName: "GPT-4 Realtime",
+  provider: "openai",
+  hostedId: "gpt-4o-realtime-preview-2024-10-01",
+  platformLink: OPENAI_PLATORM_LINK,
+  imageInput: false,
+  pricing: {
+    currency: "USD",
+    unit: "1M tokens",
+    inputCost: 15,
+    outputCost: 45
+  }
+}
+
 export const OPENAI_LLM_LIST: LLM[] = [
+  GPT4Realtime,
   GPT4o,
   GPT4Turbo,
   GPT4Vision,
